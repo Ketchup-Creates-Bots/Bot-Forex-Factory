@@ -9,6 +9,8 @@ from datetime import datetime
 from openai import OpenAI
 from flask import Flask
 import threading
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 # Pobierz zmienne środowiskowe
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
@@ -123,5 +125,6 @@ if __name__ == "__main__":
     print("🤖 Bot startuje (polling)...")
     updater.start_polling()
     updater.idle()
+
 
 
