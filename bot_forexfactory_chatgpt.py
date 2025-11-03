@@ -7,8 +7,10 @@ from telegram.error import TelegramError
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 from openai import OpenAI
+from flask import Flask
+import threading
 
-# Pobierz zmienne środowiskowe
+# === KONFIGURACJA ===
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
@@ -19,6 +21,7 @@ if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID or not OPENAI_API_KEY:
 bot = telegram.Bot(token=TELEGRAM_TOKEN)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
+# === FOREX FACTORY SCRAPER ===
 def fetch_forexfactory_events():
     url = "https://www.forexfactory.com/calendar.php"
     response = requests.get(url)
@@ -44,6 +47,7 @@ def fetch_forexfactory_events():
                 events.append({'title': event_title, 'impact': impact})
     return events
 
+# === OPENAI ANALIZA ===
 def chatgpt_interpret_event(event):
     prompt = (
         f"Jesteś ekspertem rynków finansowych. Oto wydarzenie gospodarcze:\n"
@@ -63,6 +67,7 @@ def chatgpt_interpret_event(event):
     )
     return response.choices[0].message.content.strip()
 
+# === TELEGRAM ===
 def send_telegram_message(text):
     try:
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=text)
@@ -75,30 +80,45 @@ def job():
     if not events:
         send_telegram_message("Brak istotnych wydarzeń medium/high na dzisiaj.")
         return
-    full_message = "Kalendarz Forex Factory (medium i high impact):\n\n"
+    full_message = "📅 Kalendarz Forex Factory (medium i high impact):\n\n"
     for event in events:
         interpretation = chatgpt_interpret_event(event)
         full_message += f"{interpretation}\n\n---\n\n"
     send_telegram_message(full_message)
 
 def start(update, context):
-    update.message.reply_text("Bot jest aktywny! Możesz przetestować jego działanie.")
+    update.message.reply_text("✅ Bot jest aktywny! Możesz przetestować jego działanie.")
 
+# === FLASK KEEP-ALIVE ===
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "✅ Bot działa i jest aktywny!", 200
+
+def run_flask():
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
+# === MAIN ===
 if __name__ == "__main__":
     updater = Updater(TELEGRAM_TOKEN)
     dispatcher = updater.dispatcher
 
-    # Dodaj komendę /start do testów
+    # Komenda /start
     dispatcher.add_handler(CommandHandler("start", start))
 
-    # Uruchom je od razu (test natychmiastowy)
+    # Uruchom natychmiastowe zadanie
     job()
 
-    # Zaplanuj powtarzanie zadań (codziennie o 7 rano)
+    # Zaplanuj codzienne zadanie o 7:00 UTC
     scheduler = BackgroundScheduler()
     scheduler.add_job(job, 'cron', hour=7, minute=0)
     scheduler.start()
 
-    print("Bot startuje (polling)...")
+    # Uruchom Flask w osobnym wątku, żeby Render widział port
+    threading.Thread(target=run_flask).start()
+
+    print("🤖 Bot startuje (polling)...")
     updater.start_polling()
     updater.idle()
