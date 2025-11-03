@@ -2,8 +2,9 @@ import os
 import requests
 from bs4 import BeautifulSoup
 import telegram
+from telegram.ext import Updater, CommandHandler
 from telegram.error import TelegramError
-from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 from openai import OpenAI
 
@@ -13,7 +14,7 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID or not OPENAI_API_KEY:
-    raise Exception("Brak niezbędnych zmiennych środowiskowych: TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, OPENAI_API_KEY")
+    raise Exception("Brak zmiennych środowiskowych TELEGRAM_TOKEN, TELEGRAM_CHAT_ID lub OPENAI_API_KEY")
 
 bot = telegram.Bot(token=TELEGRAM_TOKEN)
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -24,7 +25,6 @@ def fetch_forexfactory_events():
     soup = BeautifulSoup(response.content, 'html.parser')
 
     events = []
-
     rows = soup.find_all('tr', class_='calendar__row')
     for row in rows:
         impact_elem = row.find('td', class_='calendar__impact')
@@ -32,19 +32,16 @@ def fetch_forexfactory_events():
             impact_icon = impact_elem.find('span', class_='impact-icon')
             if not impact_icon:
                 continue
-
             if 'impact-high' in impact_icon['class']:
                 impact = 'High'
             elif 'impact-medium' in impact_icon['class']:
                 impact = 'Medium'
             else:
                 continue
-
             event_title_elem = row.find('td', class_='calendar__event')
             if event_title_elem:
                 event_title = event_title_elem.get_text(strip=True)
                 events.append({'title': event_title, 'impact': impact})
-
     return events
 
 def chatgpt_interpret_event(event):
@@ -73,21 +70,35 @@ def send_telegram_message(text):
         print(f"Błąd wysyłki do Telegrama: {e}")
 
 def job():
-    print(f"Uruchomiono zadanie o {datetime.now()}")
+    print(f"Wywołanie zadania o {datetime.now()}")
     events = fetch_forexfactory_events()
     if not events:
         send_telegram_message("Brak istotnych wydarzeń medium/high na dzisiaj.")
         return
-
-    full_message = "Kalendarz Forex Factory (medium i high impact) na dziś:\n\n"
+    full_message = "Kalendarz Forex Factory (medium i high impact):\n\n"
     for event in events:
         interpretation = chatgpt_interpret_event(event)
         full_message += f"{interpretation}\n\n---\n\n"
-
     send_telegram_message(full_message)
 
+def start(update, context):
+    update.message.reply_text("Bot jest aktywny! Możesz przetestować jego działanie.")
+
 if __name__ == "__main__":
-    scheduler = BlockingScheduler()
+    updater = Updater(TELEGRAM_TOKEN)
+    dispatcher = updater.dispatcher
+
+    # Dodaj komendę /start do testów
+    dispatcher.add_handler(CommandHandler("start", start))
+
+    # Uruchom je od razu (test natychmiastowy)
+    job()
+
+    # Zaplanuj powtarzanie zadań (codziennie o 7 rano)
+    scheduler = BackgroundScheduler()
     scheduler.add_job(job, 'cron', hour=7, minute=0)
-    print("Bot uruchomiony, czeka na zadania...")
     scheduler.start()
+
+    print("Bot startuje (polling)...")
+    updater.start_polling()
+    updater.idle()
