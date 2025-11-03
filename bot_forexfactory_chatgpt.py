@@ -86,6 +86,18 @@ def job():
 def start(update, context):
     update.message.reply_text("Bot jest aktywny! Możesz przetestować jego działanie.")
 
+# --- Flask serwer do Render ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "✅ Bot działa poprawnie na Render!", 200
+
+def run_flask():
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
+
 if __name__ == "__main__":
     updater = Updater(TELEGRAM_TOKEN)
     dispatcher = updater.dispatcher
@@ -111,4 +123,5 @@ if __name__ == "__main__":
     print("🤖 Bot startuje (polling)...")
     updater.start_polling()
     updater.idle()
+
 
